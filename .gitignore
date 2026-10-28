@@ -1,0 +1,9 @@
+# 생성: 2026-10-28 16:42 KST
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+.pytest_cache/
+.claude/
