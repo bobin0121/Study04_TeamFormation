@@ -14,6 +14,7 @@ create table if not exists tf_students (
 create table if not exists tf_student_sub_roles (
   student_id integer not null references tf_students(id) on delete cascade,
   role text not null check (role in ('기획자','웹 프로그래머','프론트엔드 디자이너','테스터','보고서 작성자','발표자')),
+  ord smallint not null default 0,  -- CSV에 적힌 순서
   primary key (student_id, role)
 );
 
