@@ -1,0 +1,6 @@
+# 생성: 2026-10-28 19:36 KST
+streamlit==1.66.1
+psycopg2-binary==2.9.13
+bcrypt==5.0.0
+requests==2.34.2
+python-dotenv==1.2.4
