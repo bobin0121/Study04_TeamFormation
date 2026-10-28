@@ -78,6 +78,113 @@ def recheck_reason(members: Sequence[Student], applicant: Student) -> str | None
     return RECHECK + reason if reason else None
 
 
+def team_errors(team_no: int, members: Sequence[Student]) -> list[str]:
+    """확정할 팀 구성의 규칙 위반(인원, 주 역할 중복, 필수 포함 역할)."""
+    errors = []
+    if not TEAM_MIN <= len(members) <= TEAM_MAX:
+        errors.append(f"팀{team_no}: 인원 {len(members)}명(2~4명이어야 함)")
+    mains = [m.main_role for m in members]
+    for role in ROLES:
+        if mains.count(role) > 1:
+            errors.append(f"팀{team_no}: 주 역할 {role} 중복")
+    if filled_required_count(members) < 2:
+        errors.append(f"팀{team_no}: 기획자와 웹 프로그래머를 서로 다른 학생이 맡을 수 없음")
+    return errors
+
+
+def validate_plan(teams: Teams, unassigned: Sequence[Student],
+                  assignments: Sequence[tuple[str, int]]) -> list[str]:
+    """배정안 검사 다섯 가지(PRD 4.6절). 빈 목록이면 통과."""
+    errors = []
+    pool = {s.student_no: s for s in unassigned}
+    placed = {m.student_no for ms in teams.values() for m in ms}
+    result = {t: list(ms) for t, ms in teams.items()}
+    seen = set()
+    for no, team_no in assignments:
+        if no in seen:
+            errors.append(f"{no}: 두 번 배정됨")
+            continue
+        seen.add(no)
+        if no in placed:
+            errors.append(f"{no}: 이미 팀이 있는 학생임")
+        elif no not in pool:
+            errors.append(f"{no}: 팀이 없는 학생 명단에 없음")
+        elif team_no not in result:
+            errors.append(f"{no}: 없는 팀 번호({team_no})에 배정됨")
+        else:
+            result[team_no].append(pool[no])
+    for s in unassigned:
+        if s.student_no not in seen:
+            errors.append(f"{s.name}({s.student_no}): 배정안에서 빠짐")
+    for t in sorted(result):
+        errors.extend(team_errors(t, result[t]))
+    return errors
+
+
+def _fits(s: Student, teams: Teams) -> list[int]:
+    return [t for t, ms in teams.items()
+            if len(ms) < TEAM_MAX and all(m.main_role != s.main_role for m in ms)]
+
+
+def find_assignment(teams: Teams, unassigned: Sequence[Student]) -> dict[str, int] | None:
+    """검사 다섯 가지를 모두 통과하는 배정을 모든 경우를 따져 찾는다(PRD 4.7절). 없으면 None."""
+    order = sorted(unassigned, key=lambda s: len(_fits(s, teams)))
+    cur = {t: list(ms) for t, ms in teams.items()}
+    plan: dict[str, int] = {}
+
+    def short_of_min() -> int:
+        return sum(max(0, TEAM_MIN - len(ms)) for ms in cur.values())
+
+    def go(i: int) -> bool:
+        if short_of_min() > len(order) - i:
+            return False
+        if i == len(order):
+            return all(not team_errors(t, ms) for t, ms in cur.items())
+        s = order[i]
+        tried_empty = False
+        for t in sorted(cur):
+            ms = cur[t]
+            if len(ms) >= TEAM_MAX or any(m.main_role == s.main_role for m in ms):
+                continue
+            if not ms:
+                if tried_empty:
+                    continue  # 빈 팀끼리는 서로 바꿔도 같은 배정
+                tried_empty = True
+            ms.append(s)
+            plan[s.student_no] = t
+            if not (len(ms) == TEAM_MAX and filled_required_count(ms) < 2) and go(i + 1):
+                return True
+            ms.pop()
+            del plan[s.student_no]
+        return False
+
+    return dict(plan) if go(0) else None
+
+
+def infeasibility_reasons(teams: Teams, unassigned: Sequence[Student]) -> list[str]:
+    """규칙을 지키는 배정이 없을 때 보여 줄 이유(PRD 4.8절)."""
+    reasons = []
+    total = sum(len(ms) for ms in teams.values()) + len(unassigned)
+    if not TEAM_MIN * len(teams) <= total <= TEAM_MAX * len(teams):
+        reasons.append("학생 수로는 모든 팀을 2~4명으로 만들 수 없음")
+    for t in sorted(teams):
+        ms = teams[t]
+        if filled_required_count(ms) == 2:
+            continue
+        if len(ms) >= TEAM_MAX:
+            candidates = []
+        else:
+            mains = {m.main_role for m in ms}
+            candidates = [s for s in unassigned if s.main_role not in mains]
+        missing = [role for role in (PL, WP)
+                   if not any(can_take(s, role) for s in [*ms, *candidates])]
+        for role in missing:
+            reasons.append(f"팀{t}에 {role}를 맡을 학생이 없음")
+        if not missing and len(ms) >= TEAM_MAX:
+            reasons.append(f"팀{t}에 기획자와 웹 프로그래머를 서로 다른 학생이 맡을 수 없음")
+    return reasons or ["역할 조합으로는 모든 규칙을 함께 지킬 수 없음"]
+
+
 def vote_state(member_nos: Collection[str], votes: Mapping[str, str]) -> str:
     """지금 팀원의 표만 센다. "거절", "전원찬성", "대기" 가운데 하나."""
     current = {no: v for no, v in votes.items() if no in member_nos}
