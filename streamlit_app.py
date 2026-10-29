@@ -34,9 +34,10 @@ def _set_result(text: str) -> None:
     st.session_state["result"] = text
 
 
-def _show_result(box) -> None:
+def _show_result(slot) -> None:
+    """slot(st.empty)에 마지막 결과 안내를 그린다. 다시 부르면 새 안내로 바뀐다."""
     text = st.session_state.get("result")
-    with box:
+    with slot.container():
         if not text:
             st.caption("안내 없음")
         elif text.startswith("승인"):
@@ -45,6 +46,20 @@ def _show_result(box) -> None:
             st.info(text)
         else:
             st.error(text)
+
+
+def _safe_action(fn):
+    """단추 처리 중 DB에 연결하지 못하면, 처리하지 못했다는 안내를 result에 남긴다."""
+    def wrapped(*args):
+        try:
+            fn(*args)
+        except db.DBUnavailable as e:
+            _set_result(f"막힘: {e}")
+    return wrapped
+
+
+def _db_down(e: Exception) -> None:
+    st.error(f"{e} 잠시 뒤 다시 시도해 주세요.")
 
 
 def _logout() -> None:
@@ -94,11 +109,13 @@ def login_view() -> None:
 
 # ---------------- 학생 화면 ----------------
 
+@_safe_action
 def _do_apply(student_no: str, team_no: int) -> None:
     with db.get_conn() as conn:
         _set_result(service.apply(conn, student_no, team_no).text())
 
 
+@_safe_action
 def _do_vote(voter_no: str, applicant_no: str, yes: bool) -> None:
     with db.get_conn() as conn:
         _set_result(service.vote(conn, voter_no, applicant_no, yes).text())
@@ -107,7 +124,12 @@ def _do_vote(voter_no: str, applicant_no: str, yes: bool) -> None:
 @st.fragment(run_every=REFRESH_SEC)
 def student_board(user: dict) -> None:
     me = user["student_no"]
-    snap = _snapshot()
+    _show_result(st.container(key="result").empty())
+    try:
+        snap = _snapshot()
+    except db.DBUnavailable as e:
+        _db_down(e)
+        return
     my_team = snap.team_of(me)
     my_pending = snap.pending_of(me)
 
@@ -122,8 +144,6 @@ def student_board(user: dict) -> None:
     if snap.closed:
         status += ". 모집이 마감됨"
     st.markdown(f"**{status}**")
-
-    _show_result(st.container(key="result"))
 
     # 이미 팀이 있음, 결과를 기다리는 지원이 있음, 모집 마감이면 지원 단추를 모두 비활성화한다(공고 2.8절).
     cannot_apply = bool(my_team or my_pending or snap.closed)
@@ -162,6 +182,7 @@ def _require_admin() -> str | None:
     return user["student_no"] if user and user["is_admin"] else None
 
 
+@_safe_action
 def _do_start() -> None:
     actor = _require_admin()
     if not actor:
@@ -181,6 +202,7 @@ def _do_start() -> None:
     _set_result(out.text())
 
 
+@_safe_action
 def _do_close() -> None:
     actor = _require_admin()
     if actor:
@@ -188,6 +210,7 @@ def _do_close() -> None:
             _set_result(service.close_recruitment(conn, actor).text())
 
 
+@_safe_action
 def _do_confirm() -> None:
     actor = _require_admin()
     if actor:
@@ -238,7 +261,11 @@ def _run_assign(actor: str, live) -> None:
 
 @st.fragment(run_every=REFRESH_SEC)
 def admin_board() -> None:
-    snap = _snapshot()
+    try:
+        snap = _snapshot()
+    except db.DBUnavailable as e:
+        _db_down(e)
+        return
     state = "확정됨" if snap.confirmed else "마감됨" if snap.closed else "모집 중"
     st.markdown(f"**상태: {state}**")
     cols = st.columns(2)
@@ -251,7 +278,9 @@ def admin_board() -> None:
 
 
 def admin_view(user: dict) -> None:
-    result_box = st.container(key="result")
+    # 결과 안내를 맨 먼저 그린다. 아래에서 DB 오류가 나도 방금 누른 단추의 결과는 보이게 하기 위함이다.
+    result_slot = st.container(key="result").empty()
+    _show_result(result_slot)
 
     st.subheader("1. 명단으로 처음 상태 만들기")
     st.file_uploader("명단 CSV", type=["csv"], key="admin_roster_file")
@@ -270,7 +299,12 @@ def admin_view(user: dict) -> None:
     live = status_box.empty()
     if clicked:
         st.session_state.pop("assign_lines", None)
-        _run_assign(user["student_no"], live)
+        try:
+            _run_assign(user["student_no"], live)
+        except db.DBUnavailable as e:
+            live.empty()
+            _set_result(f"막힘: {e}")
+        _show_result(result_slot)
     lines = st.session_state.get("assign_lines")
     if lines:
         for line in lines:
@@ -279,8 +313,14 @@ def admin_view(user: dict) -> None:
         status_box.caption("AI 배정 전")
 
     st.subheader("4. 배정안 확인과 확정")
-    snap = _snapshot()
-    if snap.plan and not snap.confirmed:
+    try:
+        snap = _snapshot()
+    except db.DBUnavailable as e:
+        _db_down(e)
+        snap = None
+    if snap is None:
+        pass
+    elif snap.plan and not snap.confirmed:
         rows = []
         for no, t in sorted(snap.plan["assignments"].items(), key=lambda p: (p[1], p[0])):
             s = snap.student(no)
@@ -293,8 +333,6 @@ def admin_view(user: dict) -> None:
     else:
         st.caption("배정안 없음")
     st.button("배정안 확정", key="admin_confirm", on_click=_do_confirm)
-
-    _show_result(result_box)
 
 
 # ---------------- 시작 ----------------
@@ -321,7 +359,7 @@ def main() -> None:
         else:
             student_board(user)
     except db.DBUnavailable as e:
-        st.error(f"{e} 잠시 뒤 다시 시도해 주세요.")
+        _db_down(e)
 
 
 main()

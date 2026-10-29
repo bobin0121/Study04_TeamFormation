@@ -183,3 +183,31 @@ def test_stale_session_logs_out(admin_pw, conn):
     assert not at.exception, at.exception
     assert "user" not in at.session_state
     at.text_input(key="login_student_no")
+
+
+def test_result_still_shown_when_board_cannot_reach_db(admin_pw, monkeypatch):
+    # 단추 처리는 됐는데 화면을 다시 그리다 DB 연결이 잠깐 끊겨도, result에는 그 단추의 결과가 보여야 함
+    at = _login("admin", admin_pw)
+    import db as db_module
+
+    def down(conn):
+        raise db_module.DBUnavailable()
+
+    monkeypatch.setattr(service, "load_snapshot", down)
+    at.button(key="admin_close").click().run()
+    assert not at.exception, at.exception
+    assert any(str(e.value) == "승인: 모집을 마감함" for e in at.success)
+    assert "DB에 연결할 수 없음." in _texts(at)
+
+
+def test_action_reports_block_when_db_is_down(admin_pw, monkeypatch):
+    at = _login("2026101", "1234")
+    import db as db_module
+
+    def down(*a, **k):
+        raise db_module.DBUnavailable()
+
+    monkeypatch.setattr(service, "apply", down)
+    at.button(key="apply_1").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["result"] == "막힘: DB에 연결할 수 없음."

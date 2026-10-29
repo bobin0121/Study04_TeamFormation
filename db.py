@@ -7,6 +7,7 @@
 import os
 import re
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -88,11 +89,16 @@ def _checkout():
     죽은 연결은 하나씩 버리고 다시 꺼낸다(쉬는 연결이 없으면 풀이 새로 만든다).
     풀 전체를 닫지 않는 것은 다른 사용자가 쓰는 중인 연결을 끊지 않기 위해서다."""
     pool = _pool()
-    for _ in range(POOL_SIZE + 1):
+    retried = False
+    for _ in range(POOL_SIZE + 2):
         try:
             conn = pool.getconn()
         except psycopg2.Error:
-            raise DBUnavailable() from None
+            if retried:  # 새 연결을 두 번 연달아 못 만들면 DB가 정말 안 되는 것으로 본다
+                raise DBUnavailable() from None
+            retried = True
+            time.sleep(0.5)  # 네트워크가 잠깐 끊긴 경우를 위해 한 번 더 해 본다
+            continue
         try:
             with conn.cursor() as cur:
                 cur.execute(_search_path_sql() + "select 1")

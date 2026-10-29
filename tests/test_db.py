@@ -117,3 +117,22 @@ def test_pool_uses_schema_from_env(dsn, monkeypatch):
         with c.cursor() as cur:
             cur.execute("show search_path")
             assert "tf_test" not in cur.fetchone()["search_path"]
+
+
+def test_checkout_retries_a_failed_new_connection(dsn, monkeypatch):
+    pool = db._pool()
+    real = pool.getconn
+    calls = {"n": 0}
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise psycopg2.OperationalError("잠깐 끊김")
+        return real(*a, **k)
+
+    monkeypatch.setattr(pool, "getconn", flaky)
+    with db.get_conn() as c:
+        with c.cursor() as cur:
+            cur.execute("select 1 as one")
+            assert cur.fetchone()["one"] == 1
+    assert calls["n"] == 2
