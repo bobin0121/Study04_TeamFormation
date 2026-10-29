@@ -104,3 +104,16 @@ def test_bad_dsn_error_hides_connection_string():
 def test_get_secret_reports_presence_only(capsys):
     assert config.get_secret("NO_SUCH_KEY_FOR_TEST") is None
     assert capsys.readouterr().out == ""
+
+
+def test_pool_uses_schema_from_env(dsn, monkeypatch):
+    monkeypatch.setenv("TF_DB_SCHEMA", "tf_test")
+    with db.get_conn() as c:
+        with c.cursor() as cur:
+            cur.execute("show search_path")
+            assert cur.fetchone()["search_path"].strip('"') == "tf_test"
+    monkeypatch.delenv("TF_DB_SCHEMA")
+    with db.get_conn() as c:
+        with c.cursor() as cur:
+            cur.execute("show search_path")
+            assert "tf_test" not in cur.fetchone()["search_path"]

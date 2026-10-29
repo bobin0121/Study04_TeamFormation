@@ -58,7 +58,7 @@ def test_deadline_cuts_slow_model():
 
 def test_deadline_ticks_every_second_and_returns_value():
     ticks = []
-    assert call_with_deadline(lambda: time.sleep(2.2) or "ok", 10, ticks.append) == "ok"
+    assert call_with_deadline(lambda: time.sleep(3.5) or "ok", 10, ticks.append) == "ok"
     assert len(ticks) >= 2
 
 

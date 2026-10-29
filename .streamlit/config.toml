@@ -1,0 +1,8 @@
+# 생성: 2026-10-29 21:00 KST
+[client]
+# 예상하지 못한 예외의 내용(연결 문자열이 섞일 수 있음)을 화면에 보여 주지 않는다(공고 6.3절 8번).
+showErrorDetails = "none"
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false
