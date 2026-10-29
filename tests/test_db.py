@@ -136,3 +136,10 @@ def test_checkout_retries_a_failed_new_connection(dsn, monkeypatch):
             cur.execute("select 1 as one")
             assert cur.fetchone()["one"] == 1
     assert calls["n"] == 2
+
+
+def test_connection_lost_inside_block_becomes_db_unavailable(dsn):
+    with pytest.raises(db.DBUnavailable) as info:
+        with db.get_conn():
+            raise psycopg2.OperationalError("server closed the connection unexpectedly postgresql://x:SECRET@h/db")
+    assert "SECRET" not in str(info.value)

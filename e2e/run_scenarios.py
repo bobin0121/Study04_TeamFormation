@@ -80,7 +80,7 @@ class Grader:
         loc = frame.locator(".st-key-result")
         return loc.inner_text().strip() if loc.count() else ""
 
-    def press(self, who, key, wait_ms=RESULT_WAIT_MS):
+    def press(self, who, key, wait_ms=RESULT_WAIT_MS, peek=None):
         """단추를 누르고 result를 읽는다. 단추가 7초 안에 없거나 비활성이면 막힘으로 본다."""
         frame = self.app_frame(self.page_for(who))
         button = frame.locator(f".st-key-{key} button")
@@ -101,6 +101,9 @@ class Grader:
             self.dump(who, key, "누르지 못함")
             return "?", "(단추를 누르지 못함)"
         start = time.time()
+        if peek is not None:  # 누른 뒤 2초 때의 result(진행 중 안내 확인용)
+            time.sleep(2)
+            peek.append(self.result_text(frame))
         text = before
         while time.time() - start < wait_ms / 1000:
             time.sleep(0.5)
@@ -204,7 +207,9 @@ def run(url, name, admin_pw, headed, debug_dir=None):
                         f"빠진 이름: {missing}" if missing else f"{len(a.expect_unassigned)}명 모두 있음")
             elif a.kind == "assign_confirm":
                 t0 = time.time()
-                got, text = g.press("admin", "admin_assign", wait_ms=ASSIGN_WAIT_MS)
+                peek = []
+                got, text = g.press("admin", "admin_assign", wait_ms=ASSIGN_WAIT_MS, peek=peek)
+                print(f"   (AI 배정 단추를 누르고 2초 뒤 result: {peek[0]!r})", flush=True)
                 status = g.app_frame(g.page_for("admin")).locator(".st-key-assign_status").inner_text()
                 g.check(f"관리자 AI 배정({time.time() - t0:.0f}초)", "승인", got,
                         text + " / assign_status: " + " | ".join(status.splitlines()))

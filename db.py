@@ -117,11 +117,13 @@ def get_conn():
         try:
             yield conn
             conn.commit()
-        except BaseException:
+        except BaseException as e:
             try:
                 conn.rollback()
             except psycopg2.Error:
                 pass
+            if isinstance(e, (psycopg2.OperationalError, psycopg2.InterfaceError)):
+                raise DBUnavailable() from None  # 처리 도중 연결이 끊김. 메시지는 버린다.
             raise
         finally:
             pool.putconn(conn, close=bool(conn.closed))

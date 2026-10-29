@@ -157,7 +157,8 @@ def test_vote_twice_is_blocked(conn):
     assert service.vote(conn, "2026101", "2026104", True).kind == "승인"
     service.apply(conn, "2026107", 1)
     assert service.vote(conn, "2026101", "2026107", True).kind == "대기"
-    assert service.vote(conn, "2026101", "2026107", False).text() == "막힘: 이미 투표함"
+    # 이미 투표한 지원을 다시 누르면 그 지원의 지금 상태를 보여 줌(공고 2.7절)
+    assert service.vote(conn, "2026101", "2026107", False).text() == "대기: 다른 팀원의 투표를 기다림"
 
 
 def test_non_member_cannot_vote(conn):
@@ -244,3 +245,19 @@ def test_recent_ai_logs_newest_first_in_korean_time(conn):
         cur.execute("select to_char((now() at time zone 'UTC') + interval '9 hours', 'MM-DD HH24') as k")
         assert rows[0]["at"].startswith(cur.fetchone()["k"])
     conn.rollback()
+
+
+def test_late_vote_reports_current_status(conn):
+    # 화면이 갱신되기 전 남아 있던 단추를 누른 경우: 막힘이 아니라 그 지원의 지금 상태
+    _start(conn, "쉬움")
+    service.apply(conn, "2026101", 1)
+    service.apply(conn, "2026104", 1)
+    assert service.vote(conn, "2026101", "2026104", True).kind == "승인"
+    assert service.vote(conn, "2026101", "2026104", True).text() == "승인: 팀1에 들어감"
+    service.apply(conn, "2026107", 1)
+    assert service.vote(conn, "2026104", "2026107", False).text() == "거절: 팀원이 거부함"
+    assert service.vote(conn, "2026101", "2026107", True).text() == "거절: 팀원이 거부함"
+    service.apply(conn, "2026102", 2)
+    service.apply(conn, "2026105", 2)
+    service.close_recruitment(conn, "admin")
+    assert service.vote(conn, "2026102", "2026105", True).text() == "거절: 모집 마감"

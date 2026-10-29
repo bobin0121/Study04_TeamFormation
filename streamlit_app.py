@@ -1,6 +1,8 @@
 # 생성: 2026-10-29 21:00 KST
 """팀 편성 웹 앱 화면(PRD 7장). 화면 요소의 key는 공고 2.7절 표와 같아야 한다."""
 
+import logging
+
 import streamlit as st
 
 import ai
@@ -41,7 +43,7 @@ def _show_result(box) -> None:
     보이는 순간에는 그 아래 단추(비활성 등)도 이미 바뀌어 있다. 그 전까지는 예전 안내가 그대로 보인다.
     """
     text = st.session_state.get("result")
-    with box:
+    with box.container():
         if not text:
             st.caption("안내 없음")
         elif text.startswith("승인"):
@@ -53,12 +55,16 @@ def _show_result(box) -> None:
 
 
 def _safe_action(fn):
-    """단추 처리 중 DB에 연결하지 못하면, 처리하지 못했다는 안내를 result에 남긴다."""
+    """단추 처리가 실패하면, 처리하지 못했다는 안내를 result에 남긴다.
+    그래야 앞 단계의 안내가 남아 잘못 읽히지 않는다. 오류 내용은 화면에 내지 않는다."""
     def wrapped(*args):
         try:
             fn(*args)
         except db.DBUnavailable as e:
             _set_result(f"막힘: {e}")
+        except Exception as e:
+            logging.getLogger(__name__).warning("단추 처리 실패: %s", type(e).__name__)
+            _set_result("막힘: 처리하지 못함. 다시 시도해 주세요.")
     return wrapped
 
 
@@ -288,15 +294,16 @@ def admin_board() -> None:
 
 
 def admin_view(user: dict) -> None:
-    result_box = st.container(key="result")
+    # 관리자 화면은 단추를 누를 때만 다시 그리므로, 그리는 동안 result를 비워 두었다가 마지막에 채운다.
+    result_slot = st.container(key="result").empty()
     try:
-        _admin_body(user)
+        _admin_body(user, result_slot)
     finally:
         # 아래에서 DB 오류가 나도 방금 누른 단추의 결과는 반드시 보이게 한다.
-        _show_result(result_box)
+        _show_result(result_slot)
 
 
-def _admin_body(user: dict) -> None:
+def _admin_body(user: dict, result_slot) -> None:
 
     st.subheader("1. 명단으로 처음 상태 만들기")
     st.file_uploader("명단 CSV", type=["csv"], key="admin_roster_file")
@@ -316,6 +323,9 @@ def _admin_body(user: dict) -> None:
     if clicked:
         st.session_state.pop("assign_lines", None)
         try:
+            # AI를 기다리는 동안(최대 약 6분) 앞 단계의 안내가 이번 결과로 읽히지 않게 한다.
+            # 이 안내는 승인, 대기, 거절, 막힘 가운데 어느 것으로도 시작하지 않는다.
+            result_slot.info("AI 배정 중: 결과를 기다리는 중")
             _run_assign(user["student_no"], live)
         except db.DBUnavailable as e:
             live.empty()

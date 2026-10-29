@@ -223,30 +223,46 @@ def apply(conn, student_no: str, team_no: int) -> Outcome:
         return Outcome("막힘", rules.R_FULL)
 
 
+def _latest_outcome(conn, applicant_no: str) -> Outcome:
+    """지원자의 가장 최근 지원의 지금 상태. 화면이 갱신되기 전에 남아 있던 투표 단추를 누른 경우에 쓴다."""
+    with conn.cursor() as cur:
+        cur.execute("select a.team_id, a.status, a.reason from tf_applications a "
+                    "join tf_students s on s.id = a.student_id where s.student_no = %s "
+                    "order by a.id desc limit 1", (applicant_no,))
+        row = cur.fetchone()
+    conn.commit()
+    if row is None:
+        return Outcome("막힘", "대기 중인 지원이 없음")
+    if row["status"] == "대기":
+        return Outcome("대기", "다른 팀원의 투표를 기다림")
+    return Outcome(row["status"], row["reason"] or f"팀{row['team_id']}에 들어감")
+
+
 def vote(conn, voter_no: str, applicant_no: str, yes: bool) -> Outcome:
+    """찬성, 거부. 결과는 그 지원의 지금 상태(승인, 대기, 거절)다(공고 2.7절)."""
     with conn.cursor() as cur:
         cur.execute("select a.id, a.team_id from tf_applications a join tf_students s on s.id = a.student_id "
                     "where s.student_no = %s and a.status = '대기'", (applicant_no,))
         row = cur.fetchone()
         if row is None:
             conn.rollback()
-            return Outcome("막힘", "대기 중인 지원이 없음")
+            return _latest_outcome(conn, applicant_no)
         team_no = row["team_id"]
         cur.execute("select id from tf_teams where id = %s for update", (team_no,))
         snap = _read(cur)
         p = snap.pending_of(applicant_no)
-        if p is None or p.app_id != row["id"]:
+        if p is None or p.app_id != row["id"]:  # 잠그는 사이 다른 팀원의 투표로 결과가 났음
             conn.rollback()
-            return Outcome("막힘", "대기 중인 지원이 없음")
+            return _latest_outcome(conn, applicant_no)
         if snap.closed:
             conn.rollback()
             return Outcome("막힘", rules.R_CLOSED)
         if snap.team_of(voter_no) != team_no:
             conn.rollback()
             return Outcome("막힘", "이 팀의 팀원만 투표할 수 있음")
-        if voter_no in p.votes:
+        if voter_no in p.votes:  # 이미 투표함: 바꿀 수 없고, 지금 상태를 보여 줌
             conn.rollback()
-            return Outcome("막힘", "이미 투표함")
+            return Outcome("대기", "다른 팀원의 투표를 기다림")
         choice = "찬성" if yes else "거부"
         cur.execute("insert into tf_votes (application_id, voter_id, vote) values (%s, %s, %s)",
                     (p.app_id, snap._ids[voter_no], choice))
