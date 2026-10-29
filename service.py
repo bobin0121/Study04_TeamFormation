@@ -333,3 +333,14 @@ def log_ai(conn, attempt: int, model: str, outcome: str, detail: str, elapsed: f
         cur.execute("insert into tf_ai_logs (attempt, model, outcome, detail, elapsed_sec) values (%s, %s, %s, %s, %s)",
                     (attempt, model, outcome, detail[:500], round(elapsed, 1)))
     conn.commit()
+
+
+def recent_ai_logs(conn, limit: int = 20) -> list[dict]:
+    """최근 AI 호출 기록. 시각은 한국 시각(UTC+9, 서머타임 없음)으로 바꾼다(배포 서버와 DB는 UTC)."""
+    with conn.cursor() as cur:
+        cur.execute("select to_char((created_at at time zone 'UTC') + interval '9 hours', 'MM-DD HH24:MI:SS') as at, "
+                    "attempt, model, outcome, detail, elapsed_sec from tf_ai_logs order by id desc limit %s",
+                    (limit,))
+        rows = [dict(r) for r in cur.fetchall()]
+    conn.commit()
+    return rows

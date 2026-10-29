@@ -39,8 +39,9 @@ def first_word(text: str) -> str:
 
 
 class Grader:
-    def __init__(self, browser, url, admin_pw):
+    def __init__(self, browser, url, admin_pw, debug_dir=None):
         self.browser, self.url, self.admin_pw = browser, url.rstrip("/"), admin_pw
+        self.debug_dir = Path(debug_dir) if debug_dir else None
         self.pages = {}
         self.failures = 0
         self.step = 0
@@ -86,19 +87,43 @@ class Grader:
         try:
             button.first.wait_for(state="visible", timeout=BUTTON_WAIT_MS)
         except PWTimeout:
+            self.dump(who, key, "단추 없음")
             return "막힘", "(단추 없음)"
         if button.first.is_disabled():
             return "막힘", "(단추 비활성)"
         before = self.result_text(frame)
-        button.first.click()
-        deadline = time.time() + wait_ms / 1000
+        try:
+            button.first.click(timeout=10000)
+        except PWTimeout:
+            if button.count() == 0 or button.first.is_disabled():
+                # 누르려는 사이 화면이 갱신되어 단추가 사라지거나 비활성이 됨: 공고 규칙대로 막힘
+                return "막힘", "(누르려는 사이 단추가 비활성으로 바뀜)"
+            self.dump(who, key, "누르지 못함")
+            return "?", "(단추를 누르지 못함)"
+        start = time.time()
         text = before
-        while time.time() < deadline:
+        while time.time() - start < wait_ms / 1000:
             time.sleep(0.5)
             text = self.result_text(frame)
-            if text != before and first_word(text) in ("승인", "대기", "거절", "막힘"):
+            if first_word(text) not in ("승인", "대기", "거절", "막힘"):
+                continue
+            if text != before:
+                break
+            # 앞 안내와 글자가 같은 경우(예: 대기 다음 또 대기): 앱이 처리를 끝낼 때까지 기다린 뒤 읽는다.
+            if time.time() - start >= 4 and not frame.locator('[data-testid="stStatusWidget"]').count():
                 break
         return first_word(text), text
+
+    def dump(self, who, key, why):
+        """원인을 볼 수 있게 그 순간의 화면 캡처와 화면 글자를 저장한다."""
+        if not self.debug_dir:
+            return
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        page = self.pages[who]
+        stem = f"{self.step + 1:02d}_{who}_{key}"
+        page.screenshot(path=str(self.debug_dir / f"{stem}.png"), full_page=True)
+        (self.debug_dir / f"{stem}.txt").write_text(
+            why + "\n" + self.app_frame(page).locator("body").inner_text(), encoding="utf-8")
 
     def check(self, label, expect, got, detail):
         self.step += 1
@@ -148,7 +173,7 @@ class Grader:
               f"{'일치' if ok else '불일치'} | {'; '.join(problems) or '모든 팀이 규칙을 지킴'}", flush=True)
 
 
-def run(url, name, admin_pw, headed):
+def run(url, name, admin_pw, headed, debug_dir=None):
     sc = SCENARIOS[name]
     csv_path = FIXTURES / sc.csv_name
     roster = parse_roster(csv_path.read_bytes())
@@ -156,7 +181,7 @@ def run(url, name, admin_pw, headed):
     print(f"== {name} 시나리오 ({url}) ==", flush=True)
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not headed)
-        g = Grader(browser, url, admin_pw)
+        g = Grader(browser, url, admin_pw, debug_dir)
         g.upload(csv_path, sc.team_count)
         for a in sc.actions:
             who = a.actor
@@ -197,13 +222,14 @@ def main():
     ap.add_argument("--scenario", choices=[*SCENARIOS, "all"], default="all")
     ap.add_argument("--admin-password-env", default="ADMIN_PASSWORD")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--debug-dir", help="단추를 못 찾으면 화면 캡처를 저장할 폴더")
     args = ap.parse_args()
     admin_pw = os.environ.get(args.admin_password_env) or config.get_secret(args.admin_password_env)
     if not admin_pw:
         print(f"{args.admin_password_env} 없음")
         sys.exit(2)
     names = list(SCENARIOS) if args.scenario == "all" else [args.scenario]
-    total = sum(run(args.url, n, admin_pw, args.headed) for n in names)
+    total = sum(run(args.url, n, admin_pw, args.headed, args.debug_dir) for n in names)
     sys.exit(1 if total else 0)
 
 

@@ -211,3 +211,20 @@ def test_action_reports_block_when_db_is_down(admin_pw, monkeypatch):
     at.button(key="apply_1").click().run()
     assert not at.exception, at.exception
     assert at.session_state["result"] == "막힘: DB에 연결할 수 없음."
+
+
+def test_ai_log_is_visible_to_admin(admin_pw, conn, monkeypatch):
+    # 공고 4.3절: AI 실패 처리(120초 제한, 2차와 3차로 넘어감, 앱 자체 배정)를 화면 기록으로 확인할 수 있게 함
+    for no, t in [("2026101", 1), ("2026102", 2), ("2026103", 3)]:
+        service.apply(conn, no, t)
+
+    def failing(model, messages, key):
+        raise ai.AIError("HTTP 429")
+
+    monkeypatch.setattr(ai, "call_openrouter", failing)
+    at = _login("admin", admin_pw)
+    at.button(key="admin_close").click().run()
+    at.button(key="admin_assign").click().run()
+    text = _texts(at)
+    for i, model in enumerate(ai.MODELS, start=1):
+        assert f"{i}차 {model}: 실패(HTTP 429" in text

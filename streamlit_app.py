@@ -12,7 +12,7 @@ from roster import RosterError, parse_roster
 
 st.set_page_config(page_title="팀 편성", page_icon="👥")
 
-REFRESH_SEC = 3  # 다른 사람의 변경을 3초마다 다시 그림(공고: 5초 이하)
+REFRESH_SEC = 2  # 다른 사람의 변경을 2초마다 다시 그림(공고: 5초 이하)
 
 
 @st.cache_resource(show_spinner=False)
@@ -34,10 +34,14 @@ def _set_result(text: str) -> None:
     st.session_state["result"] = text
 
 
-def _show_result(slot) -> None:
-    """slot(st.empty)에 마지막 결과 안내를 그린다. 다시 부르면 새 안내로 바뀐다."""
+def _show_result(box) -> None:
+    """result 상자에 마지막 결과 안내를 그린다.
+
+    상자는 화면 위쪽에 먼저 만들고, 내용은 화면을 다 그린 뒤 맨 마지막에 넣는다. 그래야 안내가 바뀌어
+    보이는 순간에는 그 아래 단추(비활성 등)도 이미 바뀌어 있다. 그 전까지는 예전 안내가 그대로 보인다.
+    """
     text = st.session_state.get("result")
-    with slot.container():
+    with box:
         if not text:
             st.caption("안내 없음")
         elif text.startswith("승인"):
@@ -123,8 +127,14 @@ def _do_vote(voter_no: str, applicant_no: str, yes: bool) -> None:
 
 @st.fragment(run_every=REFRESH_SEC)
 def student_board(user: dict) -> None:
-    me = user["student_no"]
-    _show_result(st.container(key="result").empty())
+    result_box = st.container(key="result")
+    try:
+        _student_body(user["student_no"])
+    finally:
+        _show_result(result_box)
+
+
+def _student_body(me: str) -> None:
     try:
         snap = _snapshot()
     except db.DBUnavailable as e:
@@ -278,9 +288,15 @@ def admin_board() -> None:
 
 
 def admin_view(user: dict) -> None:
-    # 결과 안내를 맨 먼저 그린다. 아래에서 DB 오류가 나도 방금 누른 단추의 결과는 보이게 하기 위함이다.
-    result_slot = st.container(key="result").empty()
-    _show_result(result_slot)
+    result_box = st.container(key="result")
+    try:
+        _admin_body(user)
+    finally:
+        # 아래에서 DB 오류가 나도 방금 누른 단추의 결과는 반드시 보이게 한다.
+        _show_result(result_box)
+
+
+def _admin_body(user: dict) -> None:
 
     st.subheader("1. 명단으로 처음 상태 만들기")
     st.file_uploader("명단 CSV", type=["csv"], key="admin_roster_file")
@@ -304,13 +320,25 @@ def admin_view(user: dict) -> None:
         except db.DBUnavailable as e:
             live.empty()
             _set_result(f"막힘: {e}")
-        _show_result(result_slot)
     lines = st.session_state.get("assign_lines")
     if lines:
         for line in lines:
             status_box.markdown(line)
     else:
         status_box.caption("AI 배정 전")
+
+    with st.expander("AI 호출 기록(최근 20건, 한국 시각)", expanded=bool(lines)):
+        try:
+            with db.get_conn() as conn:
+                logs = service.recent_ai_logs(conn, 20)
+        except db.DBUnavailable as e:
+            _db_down(e)
+            logs = []
+        if not logs:
+            st.caption("기록 없음")
+        for r in logs:
+            detail = f"({r['detail']}, {r['elapsed_sec']}초)" if r["detail"] else f"({r['elapsed_sec']}초)"
+            st.markdown(f"- {r['at']} {r['attempt']}차 {r['model']}: {r['outcome']}{detail}")
 
     st.subheader("4. 배정안 확인과 확정")
     try:

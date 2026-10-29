@@ -232,3 +232,15 @@ def test_two_students_apply_to_same_empty_team_at_once(conn, dsn):
         t.join(timeout=30)
     assert sorted(results.values()) == ["대기", "승인"]
     assert len(service.load_snapshot(conn).teams[1]) == 1
+
+
+def test_recent_ai_logs_newest_first_in_korean_time(conn):
+    service.log_ai(conn, 1, "m1", "실패", "HTTP 429", 1.2)
+    service.log_ai(conn, 2, "m2", "성공", "", 15.0)
+    rows = service.recent_ai_logs(conn, 20)
+    assert [r["model"] for r in rows] == ["m2", "m1"]
+    assert set(rows[0]) >= {"at", "attempt", "model", "outcome", "detail", "elapsed_sec"}
+    with conn.cursor() as cur:
+        cur.execute("select to_char((now() at time zone 'UTC') + interval '9 hours', 'MM-DD HH24') as k")
+        assert rows[0]["at"].startswith(cur.fetchone()["k"])
+    conn.rollback()
