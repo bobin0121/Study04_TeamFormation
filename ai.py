@@ -12,16 +12,19 @@ from dataclasses import dataclass, field
 
 import requests
 
-from rules import PL, ROLES, WP, Student, Teams, find_assignment, infeasibility_reasons, validate_plan
+from rules import (
+    PL, ROLES, TEAM_MAX, TEAM_MIN, WP, Student, Teams, find_assignment, infeasibility_reasons, validate_plan,
+)
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEADLINE_SEC = 120
 
-# Task 7에서 실제 호출 시험으로 정한다.
+# 2026-10-29 무료 모델 13개를 어려움 시나리오 마감 직후 상태로 시험해 정함(docs/사례 기록.md).
+# 서로 다른 회사의 모델을 골라 한 곳이 막혀도(429 등) 다음 모델로 넘어가게 했다.
 MODELS = (
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-chat-v3-0324:free",
-    "qwen/qwen3-235b-a22b:free",
+    "cohere/north-mini-code:free",      # 시험에서 유일하게 규칙을 지키는 배정안을 냄(15초)
+    "poolside/laguna-s-2.1:free",       # 2~7초에 JSON으로 답함
+    "google/gemma-4-31b-it:free",       # 시험 때는 429(사용량 초과)였음
 )
 
 
@@ -43,7 +46,10 @@ def _person(s: Student) -> dict:
 
 def build_messages(teams: Teams, unassigned: Sequence[Student]) -> list[dict]:
     state = {
-        "teams": [{"team": t, "members": [_person(m) for m in teams[t]]} for t in sorted(teams)],
+        "teams": [{"team": t,
+                   "free_slots": TEAM_MAX - len(teams[t]),
+                   "must_add_at_least": max(0, TEAM_MIN - len(teams[t])),
+                   "members": [_person(m) for m in teams[t]]} for t in sorted(teams)],
         "unassigned_students": [_person(s) for s in unassigned],
     }
     rules = (
@@ -51,7 +57,8 @@ def build_messages(teams: Teams, unassigned: Sequence[Student]) -> list[dict]:
         "규칙:\n"
         "1. 팀이 없는 학생(unassigned_students)을 빠짐없이 한 팀에만 배정한다.\n"
         "2. 이미 팀에 있는 학생은 옮기지 않는다. 배정안에는 팀이 없는 학생만 적는다.\n"
-        "3. 배정 뒤 모든 팀은 2~4명이어야 한다(빈 팀 없음).\n"
+        "3. 배정 뒤 모든 팀은 2~4명이어야 한다(빈 팀 없음). 팀마다 free_slots명보다 많이 넣으면 안 되고, "
+        "must_add_at_least명 이상은 넣어야 한다.\n"
         "4. 한 팀 안에 주 역할이 같은 학생이 2명 이상이면 안 된다(보조 역할은 중복을 따지지 않는다).\n"
         f"5. 모든 팀에 {PL} 역할 학생과 {WP} 역할 학생이 서로 다른 사람으로 1명씩 있어야 한다. "
         "주 역할이나 보조 역할로 맡을 수 있다. 한 학생이 둘 다 맡을 수는 없다.\n"

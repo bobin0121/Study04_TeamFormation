@@ -42,6 +42,11 @@ def test_build_messages_carries_state_and_rules():
     for word in ("2~4명", "주 역할", "기획자", "웹 프로그래머", "옮기지", "assignments"):
         assert word in text
     assert "1234" not in text and "password" not in text
+    content = build_messages(teams, unassigned)[1]["content"]
+    data = json.loads(content.split("지금 상태(JSON):\n")[1].split("\n\n")[0])
+    by_team = {t["team"]: t for t in data["teams"]}
+    assert by_team[1]["free_slots"] == 1 and by_team[3]["free_slots"] == 2 and by_team[4]["free_slots"] == 4
+    assert by_team[4]["must_add_at_least"] == 2 and by_team[1]["must_add_at_least"] == 0
 
 
 def test_deadline_cuts_slow_model():
