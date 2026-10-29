@@ -1,0 +1,38 @@
+# 생성: 2026-10-29 21:36 KST
+# Supabase 무료 프로젝트는 1주일 동안 DB 요청이 적으면 일시정지된다(공고 4.4절).
+# 외부 예약 서비스(GitHub Actions)로 매일 한 번 DB에 질의를 보내 일시정지를 막는다(공고 3장 어려운 해결).
+name: keep-db-awake
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 매일 00:00 UTC = 한국 시각 09:00
+  workflow_dispatch:       # 손으로도 돌려 볼 수 있음
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install psycopg2-binary==2.9.13
+      - name: DB에 질의 보내기
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          import psycopg2
+          try:
+              conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=20)
+              with conn.cursor() as cur:
+                  cur.execute("select count(*) from tf_settings")
+                  cur.fetchone()
+              conn.close()
+          except Exception as e:
+              # 오류 메시지에 연결 문자열이 섞일 수 있으므로 종류 이름만 출력한다.
+              print("DB 질의 실패:", type(e).__name__)
+              sys.exit(1)
+          print("DB 질의 성공")
+          PY
