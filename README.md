@@ -7,7 +7,7 @@
 
 ## 1. 배포 주소
 
-https://study04teamformation-datascience.streamlit.app/
+https://study04teamformation-datascience.streamlit.app
 
 ## 2. PRD와 구현 계획의 위치
 
