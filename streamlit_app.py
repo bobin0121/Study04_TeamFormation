@@ -349,7 +349,8 @@ def _admin_body(user: dict, result_slot) -> None:
             st.caption("기록 없음")
         for r in logs:
             detail = f"({r['detail']}, {r['elapsed_sec']}초)" if r["detail"] else f"({r['elapsed_sec']}초)"
-            st.markdown(f"- {r['at']} {r['attempt']}차 {r['model']}: {r['outcome']}{detail}")
+            # 모델 이름을 코드 글꼴로 감싼다. 그냥 쓰면 마크다운이 ':free:'를 그림문자(🆓)로 바꾼다.
+            st.markdown(f"- {r['at']} {r['attempt']}차 `{r['model']}`: {r['outcome']}{detail}")
 
     st.subheader("4. 배정안 확인과 확정")
     try:

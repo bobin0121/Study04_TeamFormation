@@ -227,7 +227,8 @@ def test_ai_log_is_visible_to_admin(admin_pw, conn, monkeypatch):
     at.button(key="admin_assign").click().run()
     text = _texts(at)
     for i, model in enumerate(ai.MODELS, start=1):
-        assert f"{i}차 {model}: 실패(HTTP 429" in text
+        # 모델 이름은 코드 글꼴로 감싸 ':free:'가 그림문자(🆓)로 바뀌지 않게 함
+        assert f"{i}차 `{model}`: 실패(HTTP 429" in text
 
 
 def test_unexpected_error_in_action_still_reports_block(admin_pw, monkeypatch):
