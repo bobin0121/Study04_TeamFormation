@@ -143,3 +143,18 @@ def test_connection_lost_inside_block_becomes_db_unavailable(dsn):
         with db.get_conn():
             raise psycopg2.OperationalError("server closed the connection unexpectedly postgresql://x:SECRET@h/db")
     assert "SECRET" not in str(info.value)
+
+
+def test_connect_options_guard_against_hanging(monkeypatch):
+    # 리눅스(Streamlit Cloud)에서는 죽은 연결에 질의를 보내고 오래 멈추지 않도록 tcp_user_timeout을 켠다
+    monkeypatch.setattr(db.sys, "platform", "linux")
+    assert db._connect_options()["tcp_user_timeout"] == 8000
+    monkeypatch.setattr(db.sys, "platform", "win32")
+    assert "tcp_user_timeout" not in db._connect_options()
+
+
+def test_statement_timeout_is_set_on_checkout(dsn):
+    with db.get_conn() as c:
+        with c.cursor() as cur:
+            cur.execute("show statement_timeout")
+            assert cur.fetchone()["statement_timeout"] == "15s"
