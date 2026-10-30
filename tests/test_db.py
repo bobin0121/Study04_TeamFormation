@@ -158,3 +158,26 @@ def test_statement_timeout_is_set_on_checkout(dsn):
         with c.cursor() as cur:
             cur.execute("show statement_timeout")
             assert cur.fetchone()["statement_timeout"] == "15s"
+
+
+def test_pool_reuses_connections_instead_of_reconnecting(dsn):
+    # psycopg2 풀은 쉬는 연결을 minconn개만 남기고 닫는다. minconn이 작으면 화면을 다시 그릴 때마다
+    # 새 연결을 맺는데, 그동안 풀 전체가 잠겨 다른 사용자의 단추 처리가 줄을 서게 된다.
+    seen = set()
+    lock = threading.Lock()
+
+    def work():
+        for _ in range(5):
+            with db.get_conn() as c:
+                with lock:
+                    seen.add(id(c))
+                with c.cursor() as cur:
+                    cur.execute("select pg_sleep(0.05)")
+
+    threads = [threading.Thread(target=work) for _ in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    assert len(seen) <= db.POOL_SIZE
+    assert len(db._pool()._pool) == db.POOL_SIZE   # 돌려받은 연결을 닫지 않고 모두 남겨 둠

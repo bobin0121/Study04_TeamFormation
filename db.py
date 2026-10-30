@@ -63,7 +63,10 @@ def apply_schema(conn) -> None:
 
 def open_pool(dsn: str) -> psycopg2.pool.ThreadedConnectionPool:
     try:
-        return psycopg2.pool.ThreadedConnectionPool(1, POOL_SIZE, dsn, **_connect_options())
+        # minconn을 maxconn과 같게 둔다. psycopg2 풀은 쉬는 연결을 minconn개만 남기고 돌려받을 때 닫아 버려서,
+        # minconn이 작으면 화면을 다시 그릴 때마다 새 연결(TLS 포함)을 맺는다. 새 연결을 맺는 동안 풀 전체가
+        # 잠기므로 학생이 많으면 단추 처리가 줄을 서서 사라진 것처럼 보였다(검증에서 9번째 학생부터 발생).
+        return psycopg2.pool.ThreadedConnectionPool(POOL_SIZE, POOL_SIZE, dsn, **_connect_options())
     except psycopg2.Error:
         raise DBUnavailable() from None
 

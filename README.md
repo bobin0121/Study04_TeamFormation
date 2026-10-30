@@ -22,7 +22,7 @@
 
 | 기능 | 고른 해결 | 구현 위치 |
 |---|---|---|
-| 다른 사람의 변경 보기 | 어려운 해결(`st.fragment(run_every=2)`로 팀 목록, 지원, 투표 단추, 팀이 없는 학생을 2초마다 다시 그림) | `streamlit_app.py`의 `student_board`, `admin_board` |
+| 다른 사람의 변경 보기 | 어려운 해결(`st.fragment(run_every=3)`로 팀 목록, 지원, 투표 단추, 팀이 없는 학생을 3초마다 다시 그림) | `streamlit_app.py`의 `student_board`, `admin_board` |
 | 필수 포함 역할을 지킬 수 없는 팀 | 어려운 해결(지원 단계에서 필수 포함 역할을 채울 자리가 모자라게 되는 지원을 막음) | `rules.required_slot_ok`, `rules.apply_block_reason` |
 | 같은 팀에 대기 중인 지원이 여럿 | 어려운 해결(승인 직전에 정원, 주 역할 중복, 필수 포함 역할 자리를 다시 검사함. 투표가 끝난 순서로 처리) | `rules.recheck_reason`, `service.vote` |
 | 마지막 자리에 두 명이 동시에 들어감 | 어려운 해결(DB 유일성 제약: `tf_members`의 기본 키 `(team_id, slot_no)`, `student_id` 유일, 대기 지원 학생당 1개) | `schema.sql` |

@@ -14,7 +14,8 @@ from roster import RosterError, parse_roster
 
 st.set_page_config(page_title="팀 편성", page_icon="👥")
 
-REFRESH_SEC = 2  # 다른 사람의 변경을 2초마다 다시 그림(공고: 5초 이하)
+REFRESH_SEC = 3  # 다른 사람의 변경을 3초마다 다시 그림(공고: 5초 이하).
+# 2초는 학생 16명 + 관리자일 때 서버가 거의 꽉 차서(화면 한 번 약 0.12초) 단추 처리가 늦어졌다.
 
 
 @st.cache_resource(show_spinner=False)
