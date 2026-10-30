@@ -99,7 +99,7 @@ https://study04teamformation-datascience.streamlit.app/
 
 - 단계: 배포한 앱에서 부록 3(어려움) 15단계(관리자가 배정, 확정)를 마친 뒤 관리자 화면의 "AI 호출 기록"을 엶
 - 증상: `cohere/north-mini-code:free`가 `cohere/north-mini-code🆓`로 보임(마크다운이 `:free:`를 그림문자로 바꿈). 사례 5-1의 화면을 캡처하다 발견함
-- 고친 곳: 커밋 7bdf552(모델 이름을 코드 글꼴로 감쌈). 고치기 전 화면 글자: [docs/사례 기록.md](docs/사례%20기록.md)의 "앱의 문제점" 4번. 고친 뒤 화면: 위 사례 5-1의 그림
+- 고친 곳: 커밋 7bdf552(모델 이름을 코드 글꼴로 감쌈). 고치기 전 화면 글자: [docs/사례 기록.md](docs/사례%20기록.md)의 "앱의 문제점" 4번. 고친 뒤 화면: [img/2026-10-30 배포 앱 AI 호출 기록.png](img/2026-10-30%20배포%20앱%20AI%20호출%20기록.png)(모델 이름이 `cohere/north-mini-code:free`처럼 제대로 보임)
 
 ### 남은 개선 필요 사항
 
